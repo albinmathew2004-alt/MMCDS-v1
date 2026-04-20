@@ -39,7 +39,7 @@ def combine_signals(signals: Signals, cfg: ReasoningConfig) -> Dict[str, float]:
     bonus = 0.0
     if len(support) >= 2:
         top2 = sorted(scores.values(), reverse=True)[:2]
-        bonus = 0.12 * ((top2[0] + top2[1]) / 2.0)
+        bonus = 0.20 * ((top2[0] + top2[1]) / 2.0)
         base = min(1.0, base + bonus)
 
     # Gating: if fewer than N elevated signals, cap the combined score.

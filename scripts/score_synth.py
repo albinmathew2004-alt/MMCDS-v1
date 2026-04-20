@@ -23,13 +23,10 @@ REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 if REPO_ROOT not in sys.path:
     sys.path.insert(0, REPO_ROOT)
 
-from mmcds.explanations import generate_explanations
 from mmcds.anomaly import anomaly_score, build_baseline_by_assessment
 from mmcds.features import compute_features
 from mmcds.io import load_attempt_manifest, load_grouped_events
-from mmcds.reasoning import combine_signals
-from mmcds.risk import assign_risk, compute_confidence
-from mmcds.signals import score_signals
+from mmcds.risk_engine import score_event_batch
 from mmcds.types import ScoringConfig, json_safe
 
 
@@ -39,6 +36,9 @@ def build_arg_parser() -> argparse.ArgumentParser:
     p.add_argument("--attempts", type=str, required=True, help="attempts.jsonl path")
     p.add_argument("--out", type=str, required=True, help="output scored.jsonl path")
     p.add_argument("--use_anomaly", action="store_true", help="Add optional assessment-calibrated anomaly signal")
+    p.add_argument(
+        "--legacy", action="store_true", help="Use legacy pipeline (no patterns/confidence_score)."
+    )
     return p
 
 
@@ -68,19 +68,41 @@ def main() -> None:
 
     with open(args.out, "w", encoding="utf-8") as f:
         for attempt_id, events in grouped.items():
-            features = compute_features(events, cfg.feature)
-            signals = score_signals(features, cfg.signal)
+            if args.legacy:
+                features = compute_features(events, cfg.feature)
+                from mmcds.signals import score_signals
+                from mmcds.reasoning import combine_signals
+                from mmcds.risk import assign_risk, compute_confidence
+                from mmcds.explanations import generate_explanations
 
-            if args.use_anomaly:
-                asm = str(features.get("assessment_id", ""))
-                baseline = baseline_by_assessment.get(asm, {})
-                score, zs = anomaly_score(features, baseline, anomaly_feature_names)
-                signals["anomaly"] = {"score": score, "components": {"robust_z": zs}}
-            combined = combine_signals(signals, cfg.reasoning)
-
-            risk = assign_risk(combined["combined_score"], combined, cfg.risk)
-            confidence = compute_confidence(features, signals, combined, cfg.confidence)
-            explanation = generate_explanations(features, signals, risk)
+                signals = score_signals(features, cfg.signal)
+                if args.use_anomaly:
+                    asm = str(features.get("assessment_id", ""))
+                    baseline = baseline_by_assessment.get(asm, {})
+                    score, zs = anomaly_score(features, baseline, anomaly_feature_names)
+                    signals["anomaly"] = {"score": score, "components": {"robust_z": zs}}
+                combined = combine_signals(signals, cfg.reasoning)
+                risk = assign_risk(combined["combined_score"], combined, cfg.risk)
+                confidence = compute_confidence(features, signals, combined, cfg.confidence)
+                explanation = generate_explanations(features, signals, risk)
+                confidence_score = None
+                patterns = None
+                explanation_text = None
+                data_confidence = None
+            else:
+                result = score_event_batch(events, attempt_id=attempt_id, cfg=cfg)
+                # Keep legacy-expected objects for downstream scripts.
+                features = compute_features(events, cfg.feature)
+                signals = result.signals
+                combined = {"combined_score": result.combined_score, "base_score": result.base_score}
+                risk = result.risk
+                confidence = result.confidence_score
+                data_confidence = result.confidence
+                explanation = result.explanation
+                confidence_score = result.confidence_score
+                patterns = [p.__dict__ for p in result.patterns]
+                explanation_text = result.explanation_text
+                promoted_by_pattern = bool(getattr(result, "promoted_by_pattern", False))
 
             label = manifest.get(attempt_id, {}).get("label")
             out_row = {
@@ -90,8 +112,13 @@ def main() -> None:
                 "base_score": combined["base_score"],
                 "risk": risk,
                 "confidence": confidence,
+                "data_confidence": (data_confidence if not args.legacy else None),
+                "confidence_score": confidence_score,
+                "promoted_by_pattern": (promoted_by_pattern if not args.legacy else None),
                 "signals": signals,
+                "patterns": patterns,
                 "explanation": explanation,
+                "explanation_text": explanation_text,
                 "features": features,
             }
             f.write(json.dumps(out_row, default=json_safe) + "\n")

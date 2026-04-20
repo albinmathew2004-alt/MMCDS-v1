@@ -20,6 +20,16 @@ python scripts/generate_synthetic.py --out_dir data/synth --n_attempts 600 --see
 python scripts/score_synth.py --events data/synth/events.jsonl --attempts data/synth/attempts.jsonl --out data/synth/scored.jsonl
 ```
 
+By default, scoring uses the production-style pipeline (`mmcds/risk_engine.py`) which adds:
+- `confidence_score` (evidence-based 0..1)
+- `patterns` (temporal pattern matches)
+- `explanation_text` (single string summary)
+
+To use the legacy pipeline (no patterns / no `confidence_score`), run:
+```bash
+python scripts/score_synth.py --events data/synth/events.jsonl --attempts data/synth/attempts.jsonl --out data/synth/scored_legacy.jsonl --legacy
+```
+
 ### 3) Evaluate scoring vs synthetic labels
 ```bash
 python scripts/evaluate_scored.py --scored data/synth/scored.jsonl
@@ -34,6 +44,12 @@ python scripts/score_synth.py --events data/synth/events.jsonl --attempts data/s
 - FastAPI app: `app/main.py`
 - Install deps: `pip install -r requirements.txt`
 - Run: `uvicorn app.main:app --reload`
+
+### Demo: sample input/output
+Run a small built-in example payload and print the scorer output:
+```bash
+python scripts/demo_score_api_payload.py
+```
 
 ## Deploy to AWS (fastest path: App Runner)
 

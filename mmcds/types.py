@@ -63,9 +63,9 @@ class ReasoningConfig:
     weights: Mapping[str, float] = None  # type: ignore[assignment]
 
     # gating rules
-    elevated_threshold: float = 0.70
+    elevated_threshold: float = 0.60
     strong_threshold: float = 0.85
-    support_threshold: float = 0.40
+    support_threshold: float = 0.20
     require_elevated_signals: int = 2
 
     # caps to ensure no single signal dominates
@@ -77,12 +77,12 @@ class ReasoningConfig:
                 self,
                 "weights",
                 {
-                    "timing": 0.20,
-                    "tab": 0.18,
-                    "clipboard": 0.18,
-                    "idle": 0.14,
-                    "answer_changes": 0.15,
-                    "typing": 0.15,
+                    "timing": 0.22,
+                    "tab": 0.17,
+                    "clipboard": 0.22,
+                    "idle": 0.12,
+                    "answer_changes": 0.16,
+                    "typing": 0.11,
                 },
             )
 
@@ -90,8 +90,8 @@ class ReasoningConfig:
 @dataclass(frozen=True)
 class RiskConfig:
     # Risk thresholds operate on final combined score after gating/caps.
-    medium_threshold: float = 0.28
-    high_threshold: float = 0.68
+    medium_threshold: float = 0.18
+    high_threshold: float = 0.52
 
 
 @dataclass(frozen=True)

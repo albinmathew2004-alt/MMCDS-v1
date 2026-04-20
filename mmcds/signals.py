@@ -75,10 +75,16 @@ def score_signals(features: Features, cfg: SignalConfig) -> Signals:
     # Typing (weak signal; only timing)
     kps = float(features.get("keystrokes_per_s_mean", 0.0) or 0.0)
     bursts_per_min = float(features.get("typing_burst_rate_per_min", 0.0) or 0.0)
-    typing = max(
-        ramp_inverted(kps, cfg.kps_low, cfg.kps_high),
-        ramp_inverted(bursts_per_min, cfg.typing_bursts_per_min_low, cfg.typing_bursts_per_min_high),
-    )
+    typing_bursts = int(features.get("typing_bursts", 0) or 0)
+    typing_time_total_s = float(features.get("typing_time_total_s", 0.0) or 0.0)
+    if typing_bursts <= 0 or typing_time_total_s <= 0.0:
+        # Missing typing telemetry should not be treated as suspicious typing.
+        typing = 0.0
+    else:
+        typing = max(
+            ramp_inverted(kps, cfg.kps_low, cfg.kps_high),
+            ramp_inverted(bursts_per_min, cfg.typing_bursts_per_min_low, cfg.typing_bursts_per_min_high),
+        )
 
     # Idle
     idle_ratio = float(features.get("idle_ratio", 0.0) or 0.0)

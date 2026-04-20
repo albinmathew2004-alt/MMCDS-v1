@@ -13,12 +13,8 @@ REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 if REPO_ROOT not in sys.path:
     sys.path.insert(0, REPO_ROOT)
 
-from mmcds.explanations import generate_explanations
-from mmcds.features import compute_features
-from mmcds.reasoning import combine_signals
-from mmcds.risk import assign_risk, compute_confidence
-from mmcds.signals import score_signals
-from mmcds.types import Event, ScoringConfig
+from mmcds.risk_engine import score_event_batch
+from mmcds.types import ScoringConfig
 
 
 app = FastAPI(title="MMCDS", version="0.1.0")
@@ -36,8 +32,14 @@ class ScoreOut(BaseModel):
     base_score: float
     risk: str
     confidence: float
+    confidence_score: float
+    data_confidence: float
     explanation: Dict[str, List[str]]
+    explanation_text: str
     signals: Dict[str, Any]
+    patterns: List[Dict[str, Any]]
+    pattern_detected: bool
+    pattern_type: Optional[str]
 
 
 @app.get("/health")
@@ -58,20 +60,23 @@ def score_attempt(batch: EventBatchIn) -> ScoreOut:
         if str(ev.get("attempt_id")) != batch.attempt_id:
             raise HTTPException(status_code=400, detail="attempt_id mismatch in events")
 
-    features = compute_features(batch.events, cfg.feature)
-    signals = score_signals(features, cfg.signal)
-    combined = combine_signals(signals, cfg.reasoning)
+    result = score_event_batch(batch.events, attempt_id=batch.attempt_id, cfg=cfg)
 
-    risk = assign_risk(combined["combined_score"], combined, cfg.risk)
-    confidence = compute_confidence(features, signals, combined, cfg.confidence)
-    explanation = generate_explanations(features, signals, risk)
+    patterns = [p.__dict__ for p in result.patterns]
+    strongest = max(result.patterns, key=lambda p: p.strength, default=None)
 
     return ScoreOut(
-        attempt_id=batch.attempt_id,
-        combined_score=combined["combined_score"],
-        base_score=combined["base_score"],
-        risk=risk,
-        confidence=confidence,
-        explanation=explanation,
-        signals=signals,
+        attempt_id=result.attempt_id,
+        combined_score=result.combined_score,
+        base_score=result.base_score,
+        risk=result.risk,
+        confidence=result.confidence_score,
+        confidence_score=result.confidence_score,
+        data_confidence=result.confidence,
+        explanation=result.explanation,
+        explanation_text=result.explanation_text,
+        signals=result.signals,
+        patterns=patterns,
+        pattern_detected=bool(result.patterns),
+        pattern_type=(strongest.pattern_type if strongest is not None else None),
     )

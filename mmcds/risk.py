@@ -12,13 +12,18 @@ def _clamp01(x: float) -> float:
 def assign_risk(score: float, combined: Dict[str, float], cfg: RiskConfig) -> RiskLevel:
     elevated_count = int(combined.get("elevated_count", 0.0) or 0)
     support_count = int(combined.get("support_count", 0.0) or 0)
+    strong_count = int(combined.get("strong_count", 0.0) or 0)
 
     # HIGH: require strong multi-signal evidence.
-    if score >= cfg.high_threshold and elevated_count >= 2:
+    if score >= cfg.high_threshold and (
+        elevated_count >= 2
+        or (elevated_count >= 1 and strong_count >= 1)
+        or support_count >= 3
+    ):
         return "HIGH"
 
-    # MEDIUM: require at least two moderately elevated signals.
-    if score >= cfg.medium_threshold and support_count >= 2:
+    # MEDIUM: require at least some supporting evidence.
+    if score >= cfg.medium_threshold and (support_count >= 1 or elevated_count >= 1 or strong_count >= 1):
         return "MEDIUM"
 
     return "LOW"
@@ -45,6 +50,16 @@ def compute_confidence(features: Features, signals: Signals, combined: Dict[str,
     evidence_conf = min(1.0, 0.35 * elevated_count + 0.25 * strong_count)
 
     conf = 0.55 * data_conf + 0.45 * evidence_conf
+
+    # Decision margin: predictions close to common thresholds should be less confident.
+    score = float(combined.get("combined_score", 0.0) or 0.0)
+    # Heuristic thresholds (kept in sync with defaults by design): 0.18/0.52
+    # Even if thresholds are changed, this term still behaves monotonically with distance from these anchors.
+    d_med = abs(score - 0.18)
+    d_high = abs(score - 0.52)
+    margin = min(d_med, d_high)
+    margin_term = min(1.0, margin / 0.18)
+    conf = 0.70 * conf + 0.30 * margin_term
 
     # Penalties for missing / low-quality data.
     seq_gaps = int(features.get("client_seq_gaps", 0) or 0)
